@@ -11,8 +11,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      GITHUB_USERNAME: ${{ github.actor }}
-      GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_USERNAME: ${{ secrets.GPR_USERNAME }}
+      GITHUB_PACKAGES_TOKEN: ${{ secrets.GPR_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
