@@ -1,10 +1,8 @@
 import io.github.diskria.organizations.Developer
+import io.github.diskria.organizations.GradlePluginMetadata
 import io.github.diskria.organizations.Secrets
+import io.github.diskria.organizations.extensions.buildMetadata
 import io.github.diskria.organizations.extensions.setJavaCompatibilityVersion
-import io.github.diskria.utils.kotlin.extensions.appendPackageName
-import io.github.diskria.utils.kotlin.extensions.setCase
-import io.github.diskria.utils.kotlin.words.KebabCase
-import io.github.diskria.utils.kotlin.words.SpaceCase
 
 plugins {
     `kotlin-dsl`
@@ -14,15 +12,10 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-private val plugin = object {
-    val projectName: String by rootProject
-    val projectVersion: String by rootProject
-    val slug: String = projectName.setCase(SpaceCase, KebabCase).lowercase()
-    val id: String = Developer.namespace.appendPackageName(slug)
-}
+val gradlePluginMetadata = buildMetadata<GradlePluginMetadata>(Developer)
 
 group = Developer.namespace
-version = plugin.projectVersion
+version = gradlePluginMetadata.version
 
 dependencies {
     implementation(libs.kotlin.serialization)
@@ -35,13 +28,13 @@ val javaVersion: Int = libs.versions.java.get().toInt()
 setJavaCompatibilityVersion(javaVersion)
 kotlin.jvmToolchain(javaVersion)
 
-gradlePlugin.plugins.create(plugin.projectName) {
-    id = plugin.id
-    implementationClass = plugin.id.appendPackageName("OrganizationsPlugin")
+gradlePlugin.plugins.create(gradlePluginMetadata.name) {
+    id = gradlePluginMetadata.id
+    implementationClass = gradlePluginMetadata.implementationClass
 }
 
 publishing.repositories.maven {
-    url = uri(Developer.getRepositoryUrl(plugin.slug, true))
+    url = uri(Developer.getRepositoryUrl(gradlePluginMetadata.slug, true))
     credentials {
         username = Developer.username
         password = Secrets.githubPackagesToken
