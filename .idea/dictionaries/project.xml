@@ -11,6 +11,7 @@
       <w>fabricloader</w>
       <w>jvmargs</w>
       <w>modrinth</w>
+      <w>temurin</w>
     </words>
   </dictionary>
 </component>

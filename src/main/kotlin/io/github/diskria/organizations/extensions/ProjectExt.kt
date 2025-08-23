@@ -39,9 +39,6 @@ fun Project.basePluginExtension(): BasePluginExtension =
 fun Project.signingExtension(): SigningExtension =
     extensions.getByType<SigningExtension>()
 
-fun Project.buildLibraryMetadata(): ProjectMetadata =
-    buildProjectMetadata(LibrariesOrganization)
-
 fun Project.buildProjectMetadata(owner: Owner): ProjectMetadata {
     val projectName: String by rootProject
     val projectDescription: String by rootProject
