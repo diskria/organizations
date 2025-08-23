@@ -1,50 +1,22 @@
 import io.github.diskria.organizations.Developer
-import io.github.diskria.organizations.GradlePluginMetadata
-import io.github.diskria.organizations.Secrets
-import io.github.diskria.organizations.extensions.buildMetadata
-import io.github.diskria.organizations.extensions.setJavaCompatibilityVersion
+import io.github.diskria.organizations.extensions.configureGradlePlugin
+import io.github.diskria.organizations.extensions.configureJava
+import io.github.diskria.organizations.publishing.PublishingTarget
 
 plugins {
     `kotlin-dsl`
-    `java-gradle-plugin`
     `maven-publish`
-    alias(libs.plugins.kotlin.jvm)
+    `java-gradle-plugin`
     alias(libs.plugins.kotlin.serialization)
 }
 
-val projectMetadata = buildMetadata<GradlePluginMetadata>(Developer)
-
-group = Developer.namespace
-version = projectMetadata.version
-
 dependencies {
+    implementation(libs.kotlin.gradle.plugin)
     implementation(libs.kotlin.serialization)
     implementation(libs.ktor.http)
-
     implementation(libs.kotlin.utils)
 }
 
-val javaVersion: Int = libs.versions.java.get().toInt()
-setJavaCompatibilityVersion(javaVersion)
-kotlin.jvmToolchain(javaVersion)
+configureJava(libs.versions.java.get().toInt())
 
-gradlePlugin.plugins.create(projectMetadata.slug) {
-    id = projectMetadata.id
-    implementationClass = projectMetadata.implementationClass
-}
-
-publishing {
-    publications {
-        withType<MavenPublication> {
-            artifactId = projectMetadata.slug
-        }
-    }
-
-    repositories.maven {
-        url = uri(Developer.getRepositoryUrl(projectMetadata.slug, true))
-        credentials {
-            username = "x-access-token"
-            password = Secrets.githubPackagesToken
-        }
-    }
-}
+configureGradlePlugin(Developer, PublishingTarget.GITHUB_PACKAGES)
