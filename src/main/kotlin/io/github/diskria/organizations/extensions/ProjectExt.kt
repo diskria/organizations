@@ -144,9 +144,13 @@ fun Project.configurePublishing(metadata: ProjectMetadata, target: PublishingTar
                     }
                 }
             }
-            with(signingExtension()) {
-                useGpgCmd()
-                sign(publication)
+            val gpgKey = System.getenv("GPG_KEY")
+            val gpgPassphrase = System.getenv("GPG_PASSPHRASE")
+            if (!gpgKey.isNullOrBlank() && !gpgPassphrase.isNullOrBlank()) {
+                with(signingExtension()) {
+                    useInMemoryPgpKeys(gpgKey, gpgPassphrase)
+                    sign(publication)
+                }
             }
         }
 

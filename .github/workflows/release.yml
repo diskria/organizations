@@ -13,6 +13,8 @@ jobs:
     env:
       GITHUB_USERNAME: ${{ secrets.GPR_USERNAME }}
       GITHUB_PACKAGES_TOKEN: ${{ secrets.GPR_TOKEN }}
+      GPG_KEY: ${{ secrets.GPG_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
     steps:
       - uses: actions/checkout@v4
