@@ -12,10 +12,10 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
-val gradlePluginMetadata = buildMetadata<GradlePluginMetadata>(Developer)
+val projectMetadata = buildMetadata<GradlePluginMetadata>(Developer)
 
 group = Developer.namespace
-version = gradlePluginMetadata.version
+version = projectMetadata.version
 
 dependencies {
     implementation(libs.kotlin.serialization)
@@ -28,13 +28,13 @@ val javaVersion: Int = libs.versions.java.get().toInt()
 setJavaCompatibilityVersion(javaVersion)
 kotlin.jvmToolchain(javaVersion)
 
-gradlePlugin.plugins.create(gradlePluginMetadata.name) {
-    id = gradlePluginMetadata.id
-    implementationClass = gradlePluginMetadata.implementationClass
+gradlePlugin.plugins.create(projectMetadata.name) {
+    id = projectMetadata.id
+    implementationClass = projectMetadata.implementationClass
 }
 
 publishing.repositories.maven {
-    url = uri(Developer.getRepositoryUrl(gradlePluginMetadata.slug, true))
+    url = uri(Developer.getRepositoryUrl(projectMetadata.slug, true))
     credentials {
         username = Developer.username
         password = Secrets.githubPackagesToken
