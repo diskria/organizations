@@ -28,15 +28,23 @@ val javaVersion: Int = libs.versions.java.get().toInt()
 setJavaCompatibilityVersion(javaVersion)
 kotlin.jvmToolchain(javaVersion)
 
-gradlePlugin.plugins.create(projectMetadata.name) {
+gradlePlugin.plugins.create(projectMetadata.slug) {
     id = projectMetadata.id
     implementationClass = projectMetadata.implementationClass
 }
 
-publishing.repositories.maven {
-    url = uri(Developer.getRepositoryUrl(projectMetadata.slug, true))
-    credentials {
-        username = Developer.username
-        password = Secrets.githubPackagesToken
+publishing {
+    publications {
+        withType<MavenPublication> {
+            artifactId = projectMetadata.slug
+        }
+    }
+
+    repositories.maven {
+        url = uri(Developer.getRepositoryUrl(projectMetadata.slug, true))
+        credentials {
+            username = "x-access-token"
+            password = Secrets.githubPackagesToken
+        }
     }
 }

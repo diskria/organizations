@@ -19,7 +19,7 @@ sealed class Owner(val name: String) {
 
     fun getRepositoryPath(slug: String): String =
         URLBuilder().apply {
-            this.host = "github.com"
+            host = "github.com"
             path(name, slug)
         }.buildString()
 }
