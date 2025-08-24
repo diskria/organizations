@@ -4,20 +4,22 @@ import io.github.diskria.organizations.Owner
 import io.github.diskria.organizations.licenses.LicenseType
 import org.gradle.api.publish.maven.MavenPom
 
-fun MavenPom.applyLicense(licenseType: LicenseType) {
+fun MavenPom.configureLicense(license: LicenseType) {
     licenses {
         license {
-            name.set(licenseType.displayName)
-            url.set(licenseType.getUrl())
+            name.set(license.displayName)
+            url.set(license.getUrl())
         }
     }
 }
 
-fun MavenPom.applyDeveloper(owner: Owner) {
+fun MavenPom.configureDevelopers(owner: Owner) {
     developers {
         developer {
-            id.set(owner.name)
-            name.set(owner.name)
+            owner.name.let {
+                id.set(it)
+                name.set(it)
+            }
             email.set(owner.email)
         }
     }
