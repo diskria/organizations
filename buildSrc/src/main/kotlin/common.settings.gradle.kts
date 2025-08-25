@@ -1,0 +1,1 @@
+../../../../gradle/settings/common.settings.gradle.kts

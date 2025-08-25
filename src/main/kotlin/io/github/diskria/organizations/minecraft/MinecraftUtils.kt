@@ -6,12 +6,14 @@ import io.github.diskria.utils.kotlin.extensions.toSemver
 
 object MinecraftUtils {
 
+    private val MIN_SUPPORTED_VERSION: String = ModLoader.FABRIC.birthdayVersion
+
     private val javaVersions: Map<String, Int> =
         mapOf(
             "1.20.5" to 21,
             "1.18" to 17,
             "1.17" to 16,
-            ModLoader.FABRIC.birthdayVersion to 8,
+            MIN_SUPPORTED_VERSION to 8,
         )
 
     fun getRuntimeJavaVersion(targetVersion: String): Int {
@@ -22,8 +24,9 @@ object MinecraftUtils {
             .maxByOrNull { it.key }
             ?.value
             ?: failWithDetails("Too old minecraft version") {
-                val minecraftVersion by targetVersion.toAutoNamedProperty()
-                listOf(minecraftVersion)
+                val requiredVersion by targetVersion.toAutoNamedProperty()
+                val minSupportedVersion by MIN_SUPPORTED_VERSION.toAutoNamedProperty()
+                listOf(requiredVersion, minSupportedVersion)
             }
     }
 }

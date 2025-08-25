@@ -1,4 +1,4 @@
-package io.github.diskria.organizations
+package io.github.diskria.organizations.metadata
 
 enum class ProjectType {
     GRADLE_PLUGIN,

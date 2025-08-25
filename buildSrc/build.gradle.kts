@@ -3,7 +3,6 @@ plugins {
 }
 
 dependencies {
-    implementation(libs.kotlin.serialization)
     implementation(libs.ktor.http)
     implementation(libs.kotlin.utils)
 
@@ -18,5 +17,7 @@ dependencies {
 }
 
 sourceSets.main {
-    kotlin.srcDirs("../src")
+    kotlin {
+        srcDirs("../src")
+    }
 }

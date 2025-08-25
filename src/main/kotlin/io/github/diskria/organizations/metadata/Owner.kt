@@ -1,32 +1,33 @@
-package io.github.diskria.organizations
+package io.github.diskria.organizations.metadata
 
+import io.github.diskria.organizations.common.GithubConstants
 import io.github.diskria.utils.kotlin.Constants
 import io.github.diskria.utils.kotlin.extensions.common.buildEmail
-import io.github.diskria.utils.kotlin.extensions.common.buildUrl
 import io.github.diskria.utils.kotlin.extensions.common.modifyIf
+import io.github.diskria.utils.kotlin.extensions.removePrefix
 import io.ktor.http.*
 
 sealed class Owner(val name: String) {
 
-    open val namespace: String = "io.github.${name.lowercase()}"
+    open val namespace: String = "io.${GithubConstants.GITHUB_NAME}.${name.lowercase()}"
 
     abstract val email: String
 
-    fun getRepositoryUrl(slug: String, isMaven: Boolean = false): String =
-        buildUrl("github.com".modifyIf(isMaven) { "maven.pkg.$it" }) {
-            path(name, slug)
-        }
+    fun getRepositoryMavenUrl(slug: String): String =
+        buildRepositoryUrl(slug, isMaven = true, isVCS = false).toString()
 
-    fun getRepositoryPath(slug: String): String =
+    fun getRepositoryUrl(slug: String, isVCS: Boolean = false): String =
+        buildRepositoryUrl(slug, isMaven = false, isVCS).toString()
+
+    fun getRepositoryPath(slug: String, isVCS: Boolean = false): String =
+        buildRepositoryUrl(slug, isMaven = false, isVCS = isVCS).encodedPath.removePrefix(Constants.Char.SLASH)
+
+    private fun buildRepositoryUrl(slug: String, isMaven: Boolean, isVCS: Boolean): Url =
         URLBuilder().apply {
-            host = "github.com"
-            path(name, slug)
-        }.buildString()
-}
-
-enum class GithubHost(val hostname: String) {
-    MAIN("github.com"),
-    PACKAGES("maven.pkg.github.com")
+            protocol = URLProtocol.HTTPS
+            host = "${GithubConstants.GITHUB_NAME}.com".modifyIf(isMaven) { "maven.pkg.$it" }
+            path(name, slug.modifyIf(isVCS) { "$it.${GithubConstants.GIT_NAME}" })
+        }.build()
 }
 
 sealed class Profile(val username: String) : Owner(username)

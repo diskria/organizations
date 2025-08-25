@@ -1,23 +1,27 @@
-rootProject.name = providers.gradleProperty("projectName").get()
+apply(from = "gradle/settings/common.settings.gradle.kts")
 
-fun RepositoryHandler.attachCommonRepositories() {
-    mavenCentral()
+fun RepositoryHandler.mavenGradlePluginPortal() {
     maven("https://plugins.gradle.org/m2")
 }
 
-fun RepositoryHandler.attachPluginRepositories() {
+fun RepositoryHandler.commonRepositories() {
+    mavenCentral()
+    mavenGradlePluginPortal()
+}
+
+fun RepositoryHandler.pluginRepositories() {
     gradlePluginPortal()
 }
 
 @Suppress("UnstableApiUsage")
 fun setupRepositories() {
     dependencyResolutionManagement.repositories {
-        attachCommonRepositories()
+        commonRepositories()
     }
 
     pluginManagement.repositories {
-        attachCommonRepositories()
-        attachPluginRepositories()
+        commonRepositories()
+        pluginRepositories()
     }
 }
 

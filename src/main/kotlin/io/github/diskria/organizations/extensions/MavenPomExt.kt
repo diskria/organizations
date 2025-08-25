@@ -1,10 +1,10 @@
 package io.github.diskria.organizations.extensions
 
-import io.github.diskria.organizations.Owner
-import io.github.diskria.organizations.licenses.LicenseType
+import io.github.diskria.organizations.licenses.License
+import io.github.diskria.organizations.metadata.Owner
 import org.gradle.api.publish.maven.MavenPom
 
-fun MavenPom.configureLicense(license: LicenseType) {
+fun MavenPom.configureLicense(license: License) {
     licenses {
         license {
             name.set(license.displayName)

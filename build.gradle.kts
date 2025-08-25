@@ -1,16 +1,14 @@
-import io.github.diskria.organizations.Developer
+import io.github.diskria.organizations.metadata.Developer
+import io.github.diskria.organizations.metadata.PublishingTarget
 import io.github.diskria.organizations.extensions.configureGradlePlugin
-import io.github.diskria.organizations.publishing.PublishingTarget
 
 plugins {
+    `java-gradle-plugin`
     `kotlin-dsl`
     `maven-publish`
-    `java-gradle-plugin`
-    alias(libs.plugins.kotlin.serialization)
 }
 
 dependencies {
-    implementation(libs.kotlin.serialization)
     implementation(libs.ktor.http)
     implementation(libs.kotlin.utils)
 
@@ -24,4 +22,4 @@ dependencies {
     }
 }
 
-configureGradlePlugin(Developer, libs.versions.java.get().toInt(), PublishingTarget.GITHUB_PACKAGES)
+configureGradlePlugin(Developer, PublishingTarget.GITHUB_PACKAGES)

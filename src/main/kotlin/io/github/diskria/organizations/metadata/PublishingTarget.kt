@@ -1,4 +1,4 @@
-package io.github.diskria.organizations.publishing
+package io.github.diskria.organizations.metadata
 
 enum class PublishingTarget {
     GITHUB_PACKAGES,

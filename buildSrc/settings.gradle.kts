@@ -1,23 +1,28 @@
-fun RepositoryHandler.attachCommonRepositories() {
-    mavenCentral()
+fun RepositoryHandler.mavenGradlePluginPortal() {
     maven("https://plugins.gradle.org/m2")
 }
 
-fun RepositoryHandler.attachPluginRepositories() {
+fun RepositoryHandler.commonRepositories() {
+    mavenCentral()
+    mavenGradlePluginPortal()
+}
+
+fun RepositoryHandler.pluginRepositories() {
     gradlePluginPortal()
 }
 
-@Suppress("UnstableApiUsage")
 fun setupRepositories() {
     dependencyResolutionManagement.repositories {
-        attachCommonRepositories()
+        commonRepositories()
     }
 
     pluginManagement.repositories {
-        attachCommonRepositories()
-        attachPluginRepositories()
+        commonRepositories()
+        pluginRepositories()
     }
 }
+
+setupRepositories()
 
 fun setupVersionCatalogs() {
     dependencyResolutionManagement
@@ -26,5 +31,4 @@ fun setupVersionCatalogs() {
         .from(files("../gradle/libs.versions.toml"))
 }
 
-setupRepositories()
 setupVersionCatalogs()
