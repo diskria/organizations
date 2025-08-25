@@ -4,7 +4,7 @@ import io.github.diskria.organizations.metadata.Developer
 import io.github.diskria.organizations.metadata.Owner
 import java.util.*
 
-class MITLicense(val owner: Owner = Developer) : License("MIT", "MIT License") {
+class MitLicense(val owner: Owner = Developer) : License("MIT", "MIT License") {
 
     override fun getText(): String =
         """

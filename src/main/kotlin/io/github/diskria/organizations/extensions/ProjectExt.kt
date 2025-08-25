@@ -1,19 +1,24 @@
 package io.github.diskria.organizations.extensions
 
+import com.github.gmazzo.buildconfig.BuildConfigExtension
 import com.modrinth.minotaur.ModrinthExtension
 import io.github.diskria.organizations.Secrets
 import io.github.diskria.organizations.exceptions.GradlePluginNotFoundException
 import io.github.diskria.organizations.licenses.License
-import io.github.diskria.organizations.licenses.MITLicense
+import io.github.diskria.organizations.licenses.MitLicense
 import io.github.diskria.organizations.metadata.*
+import io.github.diskria.organizations.minecraft.FabricModConfig
 import io.github.diskria.utils.kotlin.Constants
+import io.github.diskria.utils.kotlin.delegates.toAutoNamedProperty
 import io.github.diskria.utils.kotlin.extensions.capitalizeFirstChar
 import io.github.diskria.utils.kotlin.extensions.common.unsupportedOperation
 import io.github.diskria.utils.kotlin.extensions.setCase
 import io.github.diskria.utils.kotlin.extensions.wrap
 import io.github.diskria.utils.kotlin.words.CamelCase
 import io.github.diskria.utils.kotlin.words.KebabCase
+import io.github.diskria.utils.kotlin.words.ScreamingSnakeCase
 import io.github.diskria.utils.kotlin.words.SpaceCase
+import kotlinx.serialization.json.Json
 import org.gradle.api.GradleException
 import org.gradle.api.JavaVersion
 import org.gradle.api.Project
@@ -22,9 +27,11 @@ import org.gradle.api.plugins.BasePluginExtension
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.publish.PublishingExtension
 import org.gradle.api.publish.maven.MavenPublication
+import org.gradle.api.tasks.SourceSetContainer
 import org.gradle.api.tasks.compile.JavaCompile
 import org.gradle.jvm.tasks.Jar
 import org.gradle.kotlin.dsl.*
+import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.plugin.devel.GradlePluginDevelopmentExtension
 import org.gradle.plugins.signing.SigningExtension
 import org.jetbrains.kotlin.gradle.dsl.KotlinProjectExtension
@@ -36,6 +43,9 @@ fun <R> Project.base(block: BasePluginExtension.() -> R): R =
 
 fun <R> Project.java(block: JavaPluginExtension.() -> R): R =
     getExtensionOrThrow<JavaPluginExtension>("java").block()
+
+fun <R> Project.sourceSets(block: SourceSetContainer.() -> R): R =
+    getExtensionOrThrow<SourceSetContainer>("java").block()
 
 fun <R> Project.kotlin(pluginId: String, block: KotlinProjectExtension.() -> R): R =
     getExtensionOrThrow<KotlinProjectExtension>(pluginId).block()
@@ -52,6 +62,9 @@ fun <R> Project.signing(block: SigningExtension.() -> R): R =
 fun <R> Project.modrinth(block: ModrinthExtension.() -> R): R =
     getExtensionOrThrow<ModrinthExtension>("com.modrinth.minotaur").block()
 
+fun <R> Project.buildConfig(block: BuildConfigExtension.() -> R): R =
+    getExtensionOrThrow<BuildConfigExtension>("com.github.gmazzo.buildconfig").block()
+
 fun Project.versionCatalogs(): VersionCatalogsExtension =
     extensions.findByType(VersionCatalogsExtension::class.java) ?: unsupportedOperation()
 
@@ -66,45 +79,63 @@ fun Project.configureGradlePlugin(
     owner: Owner = Developer,
     publishingTarget: PublishingTarget?,
     tags: Set<String> = emptySet(),
-    license: License = MITLicense(owner),
+    license: License = MitLicense(owner),
 ): ProjectMetadata {
     val metadata = configureProject(ProjectType.GRADLE_PLUGIN, owner, publishingTarget, license)
     gradlePlugin {
-        website.set(metadata.url)
-        vcsUrl.set("${metadata.url}.git")
+        website.set(owner.getRepositoryUrl(metadata.slug))
+        vcsUrl.set(owner.getRepositoryUrl(metadata.slug, isVcsUrl = true))
 
-        plugins.create(metadata.slug) {
-            val pluginId = owner.namespace + Constants.Char.DOT + metadata.slug
-            val className = metadata.slug.setCase(KebabCase, CamelCase).capitalizeFirstChar(true) + "GradlePlugin"
-
-            id = pluginId
-            implementationClass = pluginId + Constants.Char.DOT + className
+        val id = metadata.packageName
+        val className = metadata.slug.setCase(KebabCase, CamelCase).capitalizeFirstChar(true) + "GradlePlugin"
+        plugins.create(id) {
+            this.id = id
+            implementationClass = id + Constants.Char.DOT + className
 
             displayName = metadata.name
             description = metadata.description
 
             if (tags.isNotEmpty()) {
-                this@create.tags.set(tags)
+                this.tags.set(tags)
             }
         }
     }
     return metadata
 }
 
-fun Project.configureLibrary(license: License = MITLicense()): ProjectMetadata =
+fun Project.configureLibrary(license: License = MitLicense()): ProjectMetadata =
     configureProject(ProjectType.LIBRARY, LibrariesOrganization, PublishingTarget.MAVEN_CENTRAL)
 
-fun Project.configureMinecraftMod(license: License = MITLicense()): ProjectMetadata =
-    configureProject(ProjectType.MINECRAFT_MOD, MinecraftOrganization, PublishingTarget.MODRINTH)
+fun Project.configureMinecraftMod(license: License = MitLicense()): ProjectMetadata {
+    val metadata = configureProject(ProjectType.MINECRAFT_MOD, MinecraftOrganization, PublishingTarget.MODRINTH)
+    buildConfig {
+        packageName(metadata.packageName)
+        className("ModMetadata")
 
-fun Project.configureAndroidApp(license: License = MITLicense()): ProjectMetadata =
+        val modId by metadata.slug.toAutoNamedProperty(ScreamingSnakeCase)
+        val modName by metadata.name.toAutoNamedProperty(ScreamingSnakeCase)
+
+        listOf(modId, modName).forEach {
+            buildConfigField(it.name, it.value)
+        }
+    }
+    tasks.named<ProcessResources>("processResources") {
+        layout.buildDirectory.resolve("src/main/generated/fabric/fabric.mod.json").apply {
+            parentFile.mkdirs()
+            writeText(Json { prettyPrint = true }.encodeToString(FabricModConfig.of(metadata)))
+        }
+    }
+    return metadata
+}
+
+fun Project.configureAndroidApp(license: License = MitLicense()): ProjectMetadata =
     configureProject(ProjectType.ANDROID_APP, AndroidOrganization, PublishingTarget.GOOGLE_PLAY)
 
 fun Project.configureProject(
     type: ProjectType,
     owner: Owner,
     publishingTarget: PublishingTarget?,
-    license: License = MITLicense(owner),
+    license: License = MitLicense(owner),
 ): ProjectMetadata {
     val metadata = buildMetadata(type, owner, license)
     group = owner.namespace
@@ -129,6 +160,14 @@ fun Project.configureProject(
     ) {
         jvmToolchain(metadata.javaVersion)
     }
+
+    sourceSets {
+        named("main") {
+            resources.srcDirs("src/main/generated")
+            java.srcDirs("src/main/generated/java")
+        }
+    }
+
     tasks.withType<JavaCompile>().configureEach {
         with(options) {
             release.set(metadata.javaVersion)
@@ -138,66 +177,59 @@ fun Project.configureProject(
     tasks.named<Jar>("jar") {
         from("LICENSE") {
             rename { oldName ->
-                oldName + Constants.Char.UNDERSCORE + metadata.name
+                oldName + Constants.Char.UNDERSCORE + metadata.slug
             }
         }
     }
-    when (publishingTarget) {
-        PublishingTarget.GITHUB_PACKAGES -> {
-            Secrets.githubPackagesToken?.let { token ->
-                publishing {
-                    publications.withType<MavenPublication> {
-                        artifactId = metadata.slug
-                    }
-                    repositories {
-                        maven(owner.getRepositoryMavenUrl(metadata.slug)) {
-                            credentials {
-                                username = owner.name
-                                password = token
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        PublishingTarget.MAVEN_CENTRAL -> configureMavenCentralPublishing(metadata)
-
-        PublishingTarget.GRADLE_PLUGIN_PORTAL -> {
-
-        }
-
-        PublishingTarget.MODRINTH -> {
-
-        }
-
-        PublishingTarget.GOOGLE_PLAY -> {
-
-        }
-
-        else -> {
-            if (publishingTarget != null) {
-                throw GradleException("Unknown publishing target: $publishingTarget")
-            }
-            println("Publishing not configured, skip.")
-        }
-    }
+    configurePublishing(metadata, publishingTarget)
     return metadata
 }
 
-private fun Project.configureMavenCentralPublishing(metadata: ProjectMetadata) {
-    val key = Secrets.gpgKey
-    val passphrase = Secrets.gpgPassphrase
+private fun Project.configurePublishing(metadata: ProjectMetadata, target: PublishingTarget?) {
+    if (target == null) {
+        println("Publishing target is null, skip.")
+        return
+    }
+    when (target) {
+        PublishingTarget.GITHUB_PACKAGES -> configureGithubPackagesPublishing(metadata)
+        PublishingTarget.MAVEN_CENTRAL -> configureMavenCentralPublishing(metadata)
+        PublishingTarget.GRADLE_PLUGIN_PORTAL -> {}
+        PublishingTarget.MODRINTH -> configureModrinthPublishing(metadata)
+        PublishingTarget.GOOGLE_PLAY -> {}
+    }
+}
 
-    if (key.isNullOrBlank() || passphrase.isNullOrBlank()) {
-        println("Skipping Maven Central publishing: GPG keys are missing")
+private fun Project.configureGithubPackagesPublishing(metadata: ProjectMetadata) {
+    val githubPackagesToken = Secrets.githubPackagesToken
+    if (githubPackagesToken == null) {
+        println("Skipping Github Packages publishing configuration: token is missing")
+        return
+    }
+    publishing {
+        publications.withType<MavenPublication> {
+            artifactId = metadata.slug
+        }
+        repositories {
+            maven(metadata.owner.getRepositoryMavenUrl(metadata.slug)) {
+                credentials {
+                    username = Developer.name
+                    password = githubPackagesToken
+                }
+            }
+        }
+    }
+}
+
+private fun Project.configureMavenCentralPublishing(metadata: ProjectMetadata) {
+    val gpgKey = Secrets.gpgKey
+    val gpgPassphrase = Secrets.gpgPassphrase
+    if (gpgKey == null || gpgPassphrase == null) {
+        println("Skipping Maven Central publishing configuration: GPG keys are missing")
         return
     }
     publishing {
         repositories {
-            maven {
-                url = layout.buildDirectory.dir("staging-repo").get().asFile.toURI()
-            }
+            maven(layout.buildDirectory.resolve("staging-repo"))
         }
     }
     val publication = publishing {
@@ -207,22 +239,48 @@ private fun Project.configureMavenCentralPublishing(metadata: ProjectMetadata) {
             pom {
                 name.set(metadata.name)
                 description.set(metadata.description)
-                url.set(metadata.url)
-                configureLicense(metadata.license)
-                configureDevelopers(metadata.owner)
+                url.set(metadata.owner.getRepositoryUrl(metadata.slug))
+                licenses {
+                    license {
+                        metadata.license.let {
+                            name.set(it.displayName)
+                            url.set(it.getUrl())
+                        }
+                    }
+                }
+                developers {
+                    developer {
+                        metadata.owner.name.let {
+                            id.set(it)
+                            name.set(it)
+                        }
+                        email.set(metadata.owner.email)
+                    }
+                }
                 scm {
-                    url.set(metadata.url)
-                    connection.set("scm:git:${metadata.owner.getRepositoryUrl(metadata.slug, true)}")
+                    url.set(metadata.owner.getRepositoryUrl(metadata.slug))
+                    connection.set(
+                        metadata.scm.buildUri(metadata.owner.getRepositoryUrl(metadata.slug, isVcsUrl = true))
+                    )
                     developerConnection.set(
-                        "scm:git:git@github.com:${metadata.owner.getRepositoryPath(metadata.slug, true)}"
+                        metadata.scm.buildUri(
+                            SoftwareForgeType.GITHUB.getSshAuthority(),
+                            metadata.owner.getRepositoryPath(metadata.slug, isVcsUrl = true)
+                        )
                     )
                 }
             }
         }
     }
     signing {
-        useInMemoryPgpKeys(Secrets.gpgKey, Secrets.gpgPassphrase)
+        useInMemoryPgpKeys(gpgKey, gpgPassphrase)
         sign(publication)
+    }
+}
+
+private fun Project.configureModrinthPublishing(metadata: ProjectMetadata) {
+    modrinth {
+
     }
 }
 
@@ -232,15 +290,17 @@ private fun Project.buildMetadata(type: ProjectType, owner: Owner, license: Lice
     val projectVersion: String by rootProject
     val slug = projectName.setCase(SpaceCase, KebabCase).lowercase()
     return ProjectMetadata(
-        type = type,
         owner = owner,
+        type = type,
         license = license,
-        javaVersion = getCatalogVersionOrThrow("java").toInt(),
+
         name = projectName,
         description = projectDescription,
         version = projectVersion,
         slug = slug,
-        url = owner.getRepositoryUrl(slug),
+        packageName = owner.namespace + Constants.Char.DOT + slug,
+
+        javaVersion = getCatalogVersionOrThrow("java").toInt(),
     )
 }
 

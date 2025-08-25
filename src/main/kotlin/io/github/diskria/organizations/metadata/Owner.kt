@@ -1,7 +1,8 @@
 package io.github.diskria.organizations.metadata
 
-import io.github.diskria.organizations.common.GithubConstants
 import io.github.diskria.utils.kotlin.Constants
+import io.github.diskria.utils.kotlin.extensions.appendPrefix
+import io.github.diskria.utils.kotlin.extensions.appendSuffix
 import io.github.diskria.utils.kotlin.extensions.common.buildEmail
 import io.github.diskria.utils.kotlin.extensions.common.modifyIf
 import io.github.diskria.utils.kotlin.extensions.removePrefix
@@ -9,24 +10,24 @@ import io.ktor.http.*
 
 sealed class Owner(val name: String) {
 
-    open val namespace: String = "io.${GithubConstants.GITHUB_NAME}.${name.lowercase()}"
+    open val namespace: String = "io.${SoftwareForgeType.GITHUB.title}.${name.lowercase()}"
 
     abstract val email: String
 
+    fun getRepositoryUrl(slug: String, isVcsUrl: Boolean = false): String =
+        buildRepositoryUrl(slug, isVcsUrl, isMaven = false).toString()
+
+    fun getRepositoryPath(slug: String, isVcsUrl: Boolean = false): String =
+        buildRepositoryUrl(slug, isVcsUrl = isVcsUrl, isMaven = false).encodedPath.removePrefix(Constants.Char.SLASH)
+
     fun getRepositoryMavenUrl(slug: String): String =
-        buildRepositoryUrl(slug, isMaven = true, isVCS = false).toString()
+        buildRepositoryUrl(slug, isVcsUrl = false, isMaven = true).toString()
 
-    fun getRepositoryUrl(slug: String, isVCS: Boolean = false): String =
-        buildRepositoryUrl(slug, isMaven = false, isVCS).toString()
-
-    fun getRepositoryPath(slug: String, isVCS: Boolean = false): String =
-        buildRepositoryUrl(slug, isMaven = false, isVCS = isVCS).encodedPath.removePrefix(Constants.Char.SLASH)
-
-    private fun buildRepositoryUrl(slug: String, isMaven: Boolean, isVCS: Boolean): Url =
+    private fun buildRepositoryUrl(slug: String, isVcsUrl: Boolean, isMaven: Boolean): Url =
         URLBuilder().apply {
             protocol = URLProtocol.HTTPS
-            host = "${GithubConstants.GITHUB_NAME}.com".modifyIf(isMaven) { "maven.pkg.$it" }
-            path(name, slug.modifyIf(isVCS) { "$it.${GithubConstants.GIT_NAME}" })
+            host = SoftwareForgeType.GITHUB.hostname.modifyIf(isMaven) { it.appendPrefix("maven.pkg.") }
+            path(name, slug.modifyIf(isVcsUrl) { it.appendSuffix(".${ScmType.GIT.providerName}") })
         }.build()
 }
 
