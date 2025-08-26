@@ -10,7 +10,7 @@ import io.ktor.http.*
 
 sealed class Owner(val name: String) {
 
-    open val namespace: String = "io.${SoftwareForgeType.GITHUB.title}.${name.lowercase()}"
+    open val namespace: String = "io.${SoftwareForgeType.GITHUB.displayName.lowercase()}.${name.lowercase()}"
 
     abstract val email: String
 

@@ -6,6 +6,7 @@ import io.github.diskria.utils.kotlin.words.ScreamingSnakeCase
 import kotlin.properties.ReadOnlyProperty
 
 object Secrets {
+
     val githubPackagesToken: String? by environmentVariableDelegate()
     val gpgKey: String? by environmentVariableDelegate()
     val gpgPassphrase: String? by environmentVariableDelegate()

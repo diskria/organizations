@@ -5,8 +5,6 @@ import io.ktor.http.*
 
 sealed class License(val id: String, val displayName: String) {
 
-    abstract fun getText(): String
-
     fun getUrl(): String =
         buildUrl("opensource.org") {
             path("licenses", id)

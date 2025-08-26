@@ -6,7 +6,7 @@ import io.github.diskria.utils.kotlin.extensions.toSemver
 
 object MinecraftUtils {
 
-    private val MIN_SUPPORTED_VERSION: String = ModLoader.FABRIC.birthdayVersion
+    private const val MIN_SUPPORTED_VERSION: String = "1.14.4"
 
     private val javaVersions: Map<String, Int> =
         mapOf(

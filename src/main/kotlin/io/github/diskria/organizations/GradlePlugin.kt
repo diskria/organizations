@@ -3,7 +3,7 @@ package io.github.diskria.organizations
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 
-class OrganizationsGradlePlugin : Plugin<Project> {
+class GradlePlugin : Plugin<Project> {
 
     override fun apply(project: Project) {
     }

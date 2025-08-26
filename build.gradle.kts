@@ -9,9 +9,10 @@ plugins {
 }
 
 dependencies {
-    implementation(libs.kotlin.gradle.plugin)
-    compileOnly(libs.build.config.gradle.plugin)
-    compileOnly(libs.modrinth.minotaur.gradle.plugin)
+    implementation(libs.kotlin.plugin)
+    compileOnly(libs.build.config.plugin)
+    compileOnly(libs.modrinth.minotaur.plugin)
+    compileOnly(libs.fabric.loom.plugin)
 
     implementation(libs.ktor.http)
     implementation(libs.kotlin.utils)

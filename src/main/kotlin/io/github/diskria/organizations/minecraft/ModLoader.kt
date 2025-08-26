@@ -1,8 +1,10 @@
 package io.github.diskria.organizations.minecraft
 
-enum class ModLoader(val birthdayVersion: String) {
+enum class ModLoader {
 
-    FABRIC("1.14.4");
+    FABRIC,
+    QUILT,
+    NEOFORGE;
 
     fun getTitle(): String =
         name.lowercase()
