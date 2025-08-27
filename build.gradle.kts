@@ -6,6 +6,7 @@ plugins {
     `java-gradle-plugin`
     `kotlin-dsl`
     `maven-publish`
+    alias(libs.plugins.kotlin.serialization)
 }
 
 dependencies {

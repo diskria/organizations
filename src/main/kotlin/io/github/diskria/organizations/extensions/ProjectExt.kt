@@ -6,9 +6,11 @@ import io.github.diskria.organizations.Secrets
 import io.github.diskria.organizations.licenses.License
 import io.github.diskria.organizations.licenses.MitLicense
 import io.github.diskria.organizations.metadata.*
+import io.github.diskria.organizations.minecraft.EnvironmentScope
+import io.github.diskria.organizations.minecraft.EnvironmentScope.*
 import io.github.diskria.organizations.minecraft.FabricModConfig
 import io.github.diskria.organizations.minecraft.MinecraftUtils
-import io.github.diskria.organizations.minecraft.ModEnvironment
+import io.github.diskria.organizations.minecraft.ModLoader
 import io.github.diskria.utils.kotlin.Constants
 import io.github.diskria.utils.kotlin.delegates.toAutoNamedProperty
 import io.github.diskria.utils.kotlin.extensions.asDirectoryOrNull
@@ -16,13 +18,16 @@ import io.github.diskria.utils.kotlin.extensions.common.failWithUnsupportedType
 import io.github.diskria.utils.kotlin.extensions.common.unsupportedOperation
 import io.github.diskria.utils.kotlin.extensions.setCase
 import io.github.diskria.utils.kotlin.extensions.wrap
+import io.github.diskria.utils.kotlin.poet.Property
 import io.github.diskria.utils.kotlin.words.*
 import kotlinx.serialization.json.Json
+import net.fabricmc.loom.api.LoomGradleExtensionAPI
 import net.fabricmc.loom.api.fabricapi.FabricApiExtension
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Dependency
 import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.api.artifacts.dsl.DependencyHandler
+import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.plugins.BasePluginExtension
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.publish.PublishingExtension
@@ -42,6 +47,18 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinProjectExtension
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import kotlin.jvm.optionals.getOrNull
 
+typealias BaseExt = BasePluginExtension
+typealias JavaExt = JavaPluginExtension
+typealias KotlinExt = KotlinProjectExtension
+typealias SourceSetsExt = SourceSetContainer
+typealias GradlePluginExt = GradlePluginDevelopmentExtension
+typealias PublishingExt = PublishingExtension
+typealias SigningExt = SigningExtension
+typealias BuildConfigExt = BuildConfigExtension
+typealias FabricApiExt = FabricApiExtension
+typealias LoomExt = LoomGradleExtensionAPI
+typealias ModrinthExt = ModrinthExtension
+
 fun Project.requirePlugin(id: String) {
     require(plugins.hasPlugin(id)) {
         gradleError("Plugin ${id.wrap(Constants.Char.SINGLE_QUOTE)} required but not applied.")
@@ -55,28 +72,37 @@ inline fun <reified T : Any> Project.getExtensionOrThrow(pluginId: String): T {
 }
 
 fun <R> Project.base(block: Any.() -> R): R =
-    getExtensionOrThrow<BasePluginExtension>("base").block()
+    getExtensionOrThrow<BaseExt>("base").block()
 
 fun <R> Project.java(block: Any.() -> R): R =
-    getExtensionOrThrow<JavaPluginExtension>("java").block()
+    getExtensionOrThrow<JavaExt>("java").block()
 
 fun <R> Project.kotlin(block: Any.() -> R): R =
-    getExtensionOrThrow<KotlinProjectExtension>("kotlin").block()
+    getExtensionOrThrow<KotlinExt>("kotlin").block()
 
 fun <R> Project.sourceSets(block: Any.() -> R): R =
-    getExtensionOrThrow<SourceSetContainer>("java").block()
+    getExtensionOrThrow<SourceSetsExt>("java").block()
 
 fun <R> Project.gradlePlugin(block: Any.() -> R): R =
-    getExtensionOrThrow<GradlePluginDevelopmentExtension>("maven-publish").block()
+    getExtensionOrThrow<GradlePluginExt>("maven-publish").block()
 
 fun <R> Project.publishing(block: Any.() -> R): R =
-    getExtensionOrThrow<PublishingExtension>("publishing").block()
+    getExtensionOrThrow<PublishingExt>("publishing").block()
 
 fun <R> Project.signing(block: Any.() -> R): R =
-    getExtensionOrThrow<SigningExtension>("signing").block()
+    getExtensionOrThrow<SigningExt>("signing").block()
 
 fun <R> Project.buildConfig(block: Any.() -> R): R =
-    getExtensionOrThrow<BuildConfigExtension>("com.github.gmazzo.buildconfig").block()
+    getExtensionOrThrow<BuildConfigExt>("com.github.gmazzo.buildconfig").block()
+
+fun <R> Project.fabricApi(block: Any.() -> R): R =
+    getExtensionOrThrow<FabricApiExt>("fabric-loom").block()
+
+fun <R> Project.loom(block: Any.() -> R): R =
+    getExtensionOrThrow<LoomExt>("fabric-loom").block()
+
+fun <R> Project.modrinth(block: Any.() -> R): R =
+    getExtensionOrThrow<ModrinthExt>("com.modrinth.minotaur").block()
 
 fun DependencyHandler.minecraft(dependencyNotation: Any): Dependency? =
     add("minecraft", dependencyNotation)
@@ -86,12 +112,6 @@ fun DependencyHandler.mappings(dependencyNotation: Any): Dependency? =
 
 fun DependencyHandler.modImplementation(dependencyNotation: Any): Dependency? =
     add("modImplementation", dependencyNotation)
-
-fun <R> Project.fabricApi(block: Any.() -> R): R =
-    getExtensionOrThrow<FabricApiExtension>("fabric-loom").block()
-
-fun <R> Project.modrinth(block: Any.() -> R): R =
-    getExtensionOrThrow<ModrinthExtension>("com.modrinth.minotaur").block()
 
 fun Project.versionCatalogs(): VersionCatalogsExtension =
     extensions.findByType(VersionCatalogsExtension::class.java) ?: unsupportedOperation()
@@ -103,6 +123,20 @@ fun Project.getCatalogVersionOrThrow(name: String, catalog: String = "libs"): St
     getCatalogVersion(name, catalog) ?: gradleError(
         "Missing ${name.wrap(Constants.Char.SINGLE_QUOTE)} version in $catalog.versions.toml"
     )
+
+fun Project.configureBuildConfig(packageName: String, className: String, fields: () -> List<Property<String>>) {
+    buildConfig {
+        this as BuildConfigExt
+        packageName(packageName)
+        className(className)
+        fields().forEach { field ->
+            buildConfigField(field.name, field.value)
+        }
+        useKotlinOutput {
+            internalVisibility = false
+        }
+    }
+}
 
 fun Project.buildMetadata(
     type: ProjectType,
@@ -132,11 +166,11 @@ fun Project.configureProject(metadata: ProjectMetadata) {
     group = metadata.owner.namespace
     version = metadata.version
     base {
-        this as BasePluginExtension
+        this as BaseExt
         archivesName = metadata.slug
     }
     java {
-        this as JavaPluginExtension
+        this as JavaExt
         toolchain {
             languageVersion.set(JavaLanguageVersion.of(metadata.jdkVersion))
             vendor.set(JvmVendorSpec.ADOPTIUM)
@@ -146,7 +180,7 @@ fun Project.configureProject(metadata: ProjectMetadata) {
         withJavadocJar()
     }
     kotlin {
-        this as KotlinProjectExtension
+        this as KotlinExt
         jvmToolchain(metadata.jdkVersion)
     }
     tasks.withType<JavaCompile>().configureEach {
@@ -167,13 +201,6 @@ fun Project.configureProject(metadata: ProjectMetadata) {
             }
         }
     }
-    sourceSets {
-        this as SourceSetContainer
-        named("main") {
-            resources.srcDirs("src/main/generated")
-            java.srcDirs("src/main/generated/java")
-        }
-    }
 }
 
 fun Project.configureGradlePlugin(
@@ -187,7 +214,7 @@ fun Project.configureGradlePlugin(
     val className = "GradlePlugin"
     configureProject(metadata)
     gradlePlugin {
-        this as GradlePluginDevelopmentExtension
+        this as GradlePluginExt
         website.set(owner.getRepositoryUrl(metadata.slug))
         vcsUrl.set(owner.getRepositoryUrl(metadata.slug, isVcsUrl = true))
         plugins.create(id) {
@@ -214,67 +241,103 @@ fun Project.configureLibrary(license: License = MitLicense): ProjectMetadata {
 }
 
 fun Project.configureMinecraftMod(
-    targetVersion: String,
-    environment: ModEnvironment,
+    minecraftVersion: String,
+    environment: EnvironmentScope,
+    modLoader: ModLoader = ModLoader.FABRIC,
     isFabricApiRequired: Boolean,
     license: License = MitLicense,
 ): ProjectMetadata {
     requirePlugin("org.jetbrains.kotlin.plugin.serialization")
     requirePlugin("fabric-loom")
-    val jvmTarget = MinecraftUtils.getRuntimeJavaVersion(targetVersion).toJvmTarget()
+    val jvmTarget = MinecraftUtils.getRuntimeJavaVersion(minecraftVersion).toJvmTarget()
     val metadata = buildMetadata(ProjectType.MINECRAFT_MOD, MinecraftOrganization, license, jvmTarget)
-    configureProject(metadata)
-    dependencies {
-        minecraft("com.mojang:minecraft:$targetVersion")
-        modImplementation("net.fabricmc:fabric-loader:${getCatalogVersionOrThrow("fabric-loader")}")
-
-        val fullYarnVersion = getCatalogVersion("fabric-yarn-full")
-        val yarnVersion = fullYarnVersion ?: "$targetVersion+build.${getCatalogVersionOrThrow("fabric-yarn")}"
-        mappings("net.fabricmc:yarn:$yarnVersion:v2")
-
-        if (isFabricApiRequired) {
-            val fullVersion = getCatalogVersion("fabric-api-full")
-            val version = fullVersion ?: "${getCatalogVersionOrThrow("fabric-api")}+$targetVersion"
-            modImplementation("net.fabricmc.fabric-api:fabric-api:$version")
-        }
-    }
-    buildConfig {
-        this as BuildConfigExtension
-        packageName(metadata.packageName)
-        className("ModMetadata")
-        val modId by metadata.slug.toAutoNamedProperty(ScreamingSnakeCase)
-        val modName by metadata.name.toAutoNamedProperty(ScreamingSnakeCase)
-        listOf(modId, modName).forEach {
-            buildConfigField(it.name, it.value)
-        }
-    }
+    val modId = metadata.slug
     val dataGenerators = layout.projectDirectory
-        .dir("src/client/kotlin/${metadata.packageName.setCase(DotCase, PathCase)}/generators")
+        .dir("src/${environment.sourceSetName}/kotlin/${metadata.packageName.setCase(DotCase, PathCase)}/generators")
         .asFile
         .asDirectoryOrNull()
         ?.listFiles { it.isFile && !it.isHidden }
         ?.map { metadata.packageName + Constants.Char.DOT + it.nameWithoutExtension }
         ?: emptyList()
+    configureProject(metadata)
+    dependencies {
+        minecraft("com.mojang:minecraft:$minecraftVersion")
+
+        val yarnFullVersion = getCatalogVersion("fabric-yarn-full")
+        val yarnVersion = yarnFullVersion ?: "$minecraftVersion+build.${getCatalogVersionOrThrow("fabric-yarn")}"
+        mappings("net.fabricmc:yarn:$yarnVersion:v2")
+
+        modImplementation("net.fabricmc:fabric-loader:${getCatalogVersionOrThrow("fabric-loader")}")
+
+        val kotlinFullVersion = getCatalogVersion("fabric-kotlin-full")
+        val kotlinVersion = kotlinFullVersion
+            ?: "${getCatalogVersionOrThrow("fabric-kotlin")}+kotlin.${getCatalogVersionOrThrow("kotlin")}"
+        modImplementation("net.fabricmc:fabric-language-kotlin:$kotlinVersion")
+
+        if (isFabricApiRequired) {
+            val apiFullVersion = getCatalogVersion("fabric-api-full")
+            val apiVersion = apiFullVersion ?: "${getCatalogVersionOrThrow("fabric-api")}+$minecraftVersion"
+            modImplementation("net.fabricmc.fabric-api:fabric-api:$apiVersion")
+        }
+    }
+    configureBuildConfig(metadata.packageName, "ModMetadata") {
+        val modId by modId.toAutoNamedProperty(ScreamingSnakeCase)
+        val modName by metadata.name.toAutoNamedProperty(ScreamingSnakeCase)
+        listOf(modId, modName)
+    }
+    loom {
+        this as LoomExt
+        splitEnvironmentSourceSets()
+        mods {
+            create(modId) {
+                sourceSets {
+                    this as SourceSetsExt
+                    val sourceSetNames = when (environment) {
+                        CLIENT_SERVER -> listOf("main", "client", "server")
+                        CLIENT_ONLY -> listOf("client")
+                        SERVER_ONLY -> listOf("server")
+                    }
+                    sourceSetNames.forEach { name -> sourceSet(getByName(name)) }
+                }
+            }
+        }
+        accessWidenerPath.set(file("src/${environment.sourceSetName}/resources/$modId.accesswidener"))
+    }
     if (dataGenerators.isNotEmpty()) {
+        loom {
+            this as LoomExt
+            runs {
+                create("datagen") {
+                    name = "Data Generation"
+                    runDir = "build/datagen"
+
+                    environment("server")
+
+                    vmArg("-Dfabric-api.datagen")
+                    vmArg("-Dfabric-api.datagen.output-dir=${file("src/${environment.sourceSetName}/generated")}")
+                    vmArg("-Dfabric-api.datagen.modid=$modId")
+                }
+            }
+        }
         fabricApi {
-            this as FabricApiExtension
+            this as FabricApiExt
             configureDataGeneration {
                 client = true
             }
         }
     }
     val generateFabricModConfigTask by tasks.registering {
-        val output = layout.buildDirectory.file("src/main/generated/fabric/fabric.mod.json")
-        outputs.file(output)
+        val configFile = layout.buildDirectory.file("generated/resources/fabric/fabric.mod.json")
+        outputs.file(configFile)
         doLast {
-            output.get().asFile.apply {
+            configFile.get().asFile.apply {
                 parentFile.mkdirs()
                 writeText(
                     Json { prettyPrint = true }.encodeToString(
                         FabricModConfig.of(
                             metadata,
                             environment,
-                            targetVersion,
+                            minecraftVersion,
                             getCatalogVersionOrThrow("fabric-loader"),
                             isFabricApiRequired,
                             dataGenerators,
@@ -284,10 +347,11 @@ fun Project.configureMinecraftMod(
             }
         }
     }
-    tasks.named<ProcessResources>("processResources") {
+    tasks.withType<ProcessResources>().configureEach {
         from(generateFabricModConfigTask)
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
     }
-    configureModrinthPublishing(metadata)
+    configurePublishing(metadata, PublishingTarget.MODRINTH)
     return metadata
 }
 
@@ -319,7 +383,7 @@ private fun Project.configureGithubPackagesPublishing(metadata: ProjectMetadata)
         return
     }
     publishing {
-        this as PublishingExtension
+        this as PublishingExt
         publications.withType<MavenPublication> {
             artifactId = metadata.slug
         }
@@ -342,13 +406,13 @@ private fun Project.configureMavenCentralPublishing(metadata: ProjectMetadata) {
         return
     }
     publishing {
-        this as PublishingExtension
+        this as PublishingExt
         repositories {
             maven(layout.buildDirectory.dir("staging-repo").get().asFile)
         }
     }
     val publication = publishing {
-        this as PublishingExtension
+        this as PublishingExt
         publications.create<MavenPublication>(metadata.slug) {
             artifactId = metadata.slug
             from(components["java"])
@@ -389,7 +453,7 @@ private fun Project.configureMavenCentralPublishing(metadata: ProjectMetadata) {
         }
     }
     signing {
-        this as SigningExtension
+        this as SigningExt
         useInMemoryPgpKeys(gpgKey, gpgPassphrase)
         sign(publication)
     }
@@ -397,7 +461,7 @@ private fun Project.configureMavenCentralPublishing(metadata: ProjectMetadata) {
 
 fun Project.configureModrinthPublishing(metadata: ProjectMetadata) {
     modrinth {
-        this as ModrinthExtension
+        this as ModrinthExt
         projectId.set(metadata.slug)
     }
 }

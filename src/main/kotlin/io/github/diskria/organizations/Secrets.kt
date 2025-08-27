@@ -14,7 +14,8 @@ object Secrets {
     private fun environmentVariableDelegate(): ReadOnlyProperty<Any?, String?> =
         ReadOnlyProperty { _, property ->
             System.getenv(
-                property.name
+                property
+                    .name
                     .takeIf { it.isNotBlank() }
                     ?.setCase(CamelCase, ScreamingSnakeCase)
             )

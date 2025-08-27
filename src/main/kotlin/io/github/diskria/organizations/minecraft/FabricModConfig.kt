@@ -3,13 +3,22 @@ package io.github.diskria.organizations.minecraft
 import io.github.diskria.organizations.extensions.toInt
 import io.github.diskria.organizations.metadata.Developer
 import io.github.diskria.organizations.metadata.ProjectMetadata
+import io.github.diskria.organizations.minecraft.EnvironmentScope.*
 import io.github.diskria.utils.kotlin.extensions.appendPackageName
+import io.github.diskria.utils.kotlin.extensions.common.className
 import io.github.diskria.utils.kotlin.extensions.common.fileName
-import io.github.diskria.utils.kotlin.extensions.setCase
-import io.github.diskria.utils.kotlin.words.FlatCase
-import io.github.diskria.utils.kotlin.words.SpaceCase
+import io.github.diskria.utils.kotlin.extensions.common.unsupportedOperation
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 @Serializable
 class FabricModConfig(
@@ -22,7 +31,7 @@ class FabricModConfig(
     val license: String,
     val icon: String,
     val environment: String,
-    val mixins: List<String>,
+    val mixins: List<MixinsConfigEntry>,
     val accessWidener: String,
 
     @SerialName("contact")
@@ -36,20 +45,23 @@ class FabricModConfig(
 ) {
     @Serializable
     class Links private constructor(
-        val homepage: String,
-        val sources: String,
+        @SerialName("homepage")
+        val siteUrl: String,
+
+        @SerialName("sources")
+        val sourceUrl: String,
     ) {
         companion object {
-            fun of(sources: String, homepage: String = sources): Links =
+            fun of(sourceUrl: String, siteUrl: String = sourceUrl): Links =
                 Links(
-                    homepage = homepage,
-                    sources = sources,
+                    siteUrl = siteUrl,
+                    sourceUrl = sourceUrl,
                 )
         }
     }
 
     @Serializable
-    data class Dependencies(
+    class Dependencies(
         @SerialName("java")
         val jvmDependency: String,
 
@@ -70,72 +82,137 @@ class FabricModConfig(
                 isApiRequired: Boolean,
             ): Dependencies =
                 Dependencies(
-                    jvmDependency = ">=$javaVersion",
-                    minecraftDependency = ">=$minecraftVersion",
-                    loaderDependency = ">=$loaderVersion",
-                    apiDependency = if (isApiRequired) "*" else null,
+                    jvmDependency = VersionCondition.min(javaVersion.toString()),
+                    minecraftDependency = VersionCondition.min(minecraftVersion),
+                    loaderDependency = VersionCondition.min(loaderVersion),
+                    apiDependency = if (isApiRequired) VersionCondition.ANY_VERSION else null,
                 )
         }
     }
 
     @Serializable
-    data class EntryPoints(
+    class EntryPoints(
+        @SerialName("main")
+        val mainEntryPoints: List<EntryPoint>? = null,
+
         @SerialName("client")
         val clientEntryPoints: List<EntryPoint>? = null,
 
         @SerialName("server")
         val serverEntryPoints: List<EntryPoint>? = null,
 
-        @SerialName("main")
-        val mainEntryPoints: List<EntryPoint>? = null,
-
         @SerialName("fabric-datagen")
         val dataGenerators: List<EntryPoint>? = null,
     ) {
         companion object {
-            fun of(
-                metadata: ProjectMetadata,
-                environment: ModEnvironment,
-                clientDataGenerators: List<String>,
-            ): EntryPoints {
+            fun of(metadata: ProjectMetadata, environment: EnvironmentScope, dataGenerators: List<String>): EntryPoints {
                 val packageName = metadata.packageName
-                val baseClassName = "Mod"
-                if (environment == ModEnvironment.SERVER_ONLY) {
-                    return EntryPoints(
-                        serverEntryPoints = listOf(EntryPoint(packageName.appendPackageName(baseClassName + "Server")))
+                val classNameBase = "Mod"
+                val dataGeneratorEntryPoints = dataGenerators.map { EntryPoint.of(it) }.ifEmpty { null }
+
+                val mainEntryPoints = entryPoints(packageName.appendPackageName(classNameBase))
+                val clientEntryPoints = entryPoints(packageName.appendPackageName(classNameBase + "Client"))
+                val serverEntryPoints = entryPoints(packageName.appendPackageName(classNameBase + "Server"))
+
+                return when (environment) {
+                    SERVER_ONLY -> EntryPoints(
+                        serverEntryPoints = serverEntryPoints
                     )
-                }
-                val clientDataGeneratorEntryPoints = clientDataGenerators.map { EntryPoint(it) }.ifEmpty { null }
-                val clientEntryPoints = listOf(EntryPoint(packageName.appendPackageName(baseClassName + "Client")))
-                if (environment == ModEnvironment.CLIENT_ONLY) {
-                    return EntryPoints(
+
+                    CLIENT_ONLY -> EntryPoints(
                         clientEntryPoints = clientEntryPoints,
-                        dataGenerators = clientDataGeneratorEntryPoints,
+                        dataGenerators = dataGeneratorEntryPoints,
+                    )
+
+                    CLIENT_SERVER -> EntryPoints(
+                        mainEntryPoints = mainEntryPoints,
+                        clientEntryPoints = clientEntryPoints,
+                        serverEntryPoints = serverEntryPoints,
+                        dataGenerators = dataGeneratorEntryPoints,
                     )
                 }
-                return EntryPoints(
-                    clientEntryPoints = clientEntryPoints,
-                    mainEntryPoints = listOf(EntryPoint(packageName.appendPackageName(baseClassName))),
-                    dataGenerators = clientDataGeneratorEntryPoints,
-                )
             }
+
+            private fun entryPoints(vararg classPaths: String): List<EntryPoint> =
+                classPaths.map { EntryPoint.of(it) }
         }
     }
 
     @Serializable
-    data class EntryPoint(
-        val value: String,
-        val adapter: String = "kotlin",
-    )
+    class EntryPoint(
+        val adapter: String,
+
+        @SerialName("value")
+        val classPath: String,
+    ) {
+        companion object {
+            fun of(classPath: String): EntryPoint =
+                EntryPoint(
+                    classPath = classPath,
+                    adapter = "kotlin",
+                )
+        }
+    }
+
+    @Serializable(with = MixinEntrySerializer::class)
+    sealed class MixinsConfigEntry {
+
+        data class MainConfigEntry(val config: String) : MixinsConfigEntry()
+
+        data class EnvironmentConfigEntry(
+            val config: String,
+            val environment: String
+        ) : MixinsConfigEntry()
+
+        companion object {
+            fun of(metadata: ProjectMetadata, environment: EnvironmentScope): List<MixinsConfigEntry> {
+                val mainConfig = MainConfigEntry("${metadata.slug}.mixins.json")
+                val clientConfig = EnvironmentConfigEntry("${metadata.slug}.client.mixins.json", "client")
+                val serverConfig = EnvironmentConfigEntry("${metadata.slug}.server.mixins.json", "server")
+                return when (environment) {
+                    CLIENT_SERVER -> listOf(mainConfig, clientConfig, serverConfig)
+                    CLIENT_ONLY -> listOf(clientConfig)
+                    SERVER_ONLY -> listOf(serverConfig)
+                }
+            }
+        }
+    }
+
+    object MixinEntrySerializer : KSerializer<MixinsConfigEntry> {
+
+        override val descriptor: SerialDescriptor = buildClassSerialDescriptor(MixinsConfigEntry::class.className())
+
+        override fun serialize(encoder: Encoder, value: MixinsConfigEntry) {
+            encoder as JsonEncoder
+            encoder.encodeJsonElement(
+                when (value) {
+                    is MixinsConfigEntry.MainConfigEntry -> JsonPrimitive(value.config)
+                    is MixinsConfigEntry.EnvironmentConfigEntry -> buildJsonObject {
+                        put("config", value.config)
+                        put("environment", value.environment)
+                    }
+                }
+            )
+        }
+
+        override fun deserialize(decoder: Decoder): MixinsConfigEntry = unsupportedOperation()
+    }
+
+    private object VersionCondition {
+        const val ANY_VERSION: String = "*"
+
+        fun min(version: String): String =
+            ">=$version"
+    }
 
     companion object {
         fun of(
             metadata: ProjectMetadata,
-            environment: ModEnvironment,
+            environment: EnvironmentScope,
             targetVersion: String,
             loaderVersion: String,
             isApiRequired: Boolean,
-            clientDataGenerators: List<String>
+            dataGenerators: List<String>
         ): FabricModConfig =
             FabricModConfig(
                 schemaVersion = 1,
@@ -146,14 +223,23 @@ class FabricModConfig(
                 authors = listOf(Developer.name),
                 license = metadata.license.id,
                 icon = "assets/${metadata.slug}/icon.png",
-                environment = environment.fabricConfigValue,
-                mixins = listOf(
-                    
-                ),
+                environment = environment.fabricConfigEnvironment,
                 accessWidener = fileName(metadata.slug, "accesswidener"),
-                links = Links.of(metadata.owner.getRepositoryUrl(metadata.slug)),
-                entryPoints = EntryPoints.of(metadata, environment, clientDataGenerators),
-                dependencies = Dependencies.of(metadata.jvmTarget.toInt(), targetVersion, loaderVersion, isApiRequired)
+                mixins = MixinsConfigEntry.of(metadata, environment),
+                links = Links.of(
+                    metadata.owner.getRepositoryUrl(metadata.slug)
+                ),
+                entryPoints = EntryPoints.of(
+                    metadata,
+                    environment,
+                    dataGenerators
+                ),
+                dependencies = Dependencies.of(
+                    metadata.jvmTarget.toInt(),
+                    targetVersion,
+                    loaderVersion,
+                    isApiRequired
+                )
             )
     }
 }
