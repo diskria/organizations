@@ -33,7 +33,7 @@ sealed class Owner(val name: String) {
 
 sealed class Profile(val username: String) : Owner(username)
 
-object Developer : Profile("diskria") {
+object DiskriaDeveloper : Profile("diskria") {
     override val email: String = buildEmail(username, "proton.me")
 }
 
@@ -47,12 +47,12 @@ open class DeveloperOrganization(
     override val email: String = profile.email
 }
 
-object MinecraftOrganization : DeveloperOrganization(Developer, "mc")
-object AndroidOrganization : DeveloperOrganization(Developer, "android")
-object LibrariesOrganization : DeveloperOrganization(Developer, "libs")
+object MinecraftOrganization : DeveloperOrganization(DiskriaDeveloper, "mc")
+object AndroidOrganization : DeveloperOrganization(DiskriaDeveloper, "android")
+object LibrariesOrganization : DeveloperOrganization(DiskriaDeveloper, "libs")
 
 open class BrandOrganization(name: String) : Owner(name) {
-    override val email: String = Developer.email
+    override val email: String = DiskriaDeveloper.email
 }
 
 object ForkyLabOrganization : BrandOrganization("ForkyLab")

@@ -4,6 +4,7 @@ enum class ModLoader {
 
     FABRIC,
     QUILT,
+    FORGE,
     NEOFORGE;
 
     fun getTitle(): String =

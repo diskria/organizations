@@ -23,7 +23,7 @@ object MinecraftUtils {
             .filterKeys { it <= targetSemver }
             .maxByOrNull { it.key }
             ?.value
-            ?: failWithDetails("Too old minecraft version") {
+            ?: failWithDetails("Too old Minecraft version") {
                 val requiredVersion by targetVersion.toAutoNamedProperty()
                 val minSupportedVersion by MIN_SUPPORTED_VERSION.toAutoNamedProperty()
                 listOf(requiredVersion, minSupportedVersion)

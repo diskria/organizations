@@ -1,5 +1,5 @@
 import io.github.diskria.organizations.extensions.configureGradlePlugin
-import io.github.diskria.organizations.metadata.Developer
+import io.github.diskria.organizations.metadata.DiskriaDeveloper
 import io.github.diskria.organizations.metadata.PublishingTarget
 
 plugins {
@@ -26,4 +26,4 @@ dependencies {
     }
 }
 
-configureGradlePlugin(Developer, PublishingTarget.GITHUB_PACKAGES)
+configureGradlePlugin(DiskriaDeveloper, PublishingTarget.GITHUB_PACKAGES)

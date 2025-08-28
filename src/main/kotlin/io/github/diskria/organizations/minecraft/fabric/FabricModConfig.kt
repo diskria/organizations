@@ -1,9 +1,11 @@
-package io.github.diskria.organizations.minecraft
+package io.github.diskria.organizations.minecraft.fabric
 
 import io.github.diskria.organizations.extensions.toInt
-import io.github.diskria.organizations.metadata.Developer
+import io.github.diskria.organizations.metadata.DiskriaDeveloper
 import io.github.diskria.organizations.metadata.ProjectMetadata
-import io.github.diskria.organizations.minecraft.EnvironmentScope.*
+import io.github.diskria.organizations.minecraft.ModEnvironmentType
+import io.github.diskria.organizations.minecraft.ModEnvironmentType.*
+import io.github.diskria.organizations.minecraft.ModSide
 import io.github.diskria.utils.kotlin.extensions.appendPackageName
 import io.github.diskria.utils.kotlin.extensions.common.className
 import io.github.diskria.utils.kotlin.extensions.common.fileName
@@ -105,7 +107,11 @@ class FabricModConfig(
         val dataGenerators: List<EntryPoint>? = null,
     ) {
         companion object {
-            fun of(metadata: ProjectMetadata, environment: EnvironmentScope, dataGenerators: List<String>): EntryPoints {
+            fun of(
+                metadata: ProjectMetadata,
+                environment: ModEnvironmentType,
+                dataGenerators: List<String>,
+            ): EntryPoints {
                 val packageName = metadata.packageName
                 val classNameBase = "Mod"
                 val dataGeneratorEntryPoints = dataGenerators.map { EntryPoint.of(it) }.ifEmpty { null }
@@ -155,24 +161,21 @@ class FabricModConfig(
     }
 
     @Serializable(with = MixinEntrySerializer::class)
-    sealed class MixinsConfigEntry {
+    sealed class MixinsConfigEntry(val fileName: String) {
 
-        data class MainConfigEntry(val config: String) : MixinsConfigEntry()
-
-        data class EnvironmentConfigEntry(
-            val config: String,
-            val environment: String
-        ) : MixinsConfigEntry()
+        class MainConfigEntry(modId: String) : MixinsConfigEntry("$modId.mixins.json")
+        class SideConfigEntry(modId: String, val side: ModSide) : MixinsConfigEntry("$modId.${side.title}.mixins.json")
 
         companion object {
-            fun of(metadata: ProjectMetadata, environment: EnvironmentScope): List<MixinsConfigEntry> {
-                val mainConfig = MainConfigEntry("${metadata.slug}.mixins.json")
-                val clientConfig = EnvironmentConfigEntry("${metadata.slug}.client.mixins.json", "client")
-                val serverConfig = EnvironmentConfigEntry("${metadata.slug}.server.mixins.json", "server")
+            fun of(metadata: ProjectMetadata, environment: ModEnvironmentType): List<MixinsConfigEntry> {
+                val modId = metadata.slug
+                val mainConfig = MainConfigEntry(modId)
+                val clientSideConfig = SideConfigEntry(modId, ModSide.CLIENT)
+                val serverSideConfig = SideConfigEntry(modId, ModSide.SERVER)
                 return when (environment) {
-                    CLIENT_SERVER -> listOf(mainConfig, clientConfig, serverConfig)
-                    CLIENT_ONLY -> listOf(clientConfig)
-                    SERVER_ONLY -> listOf(serverConfig)
+                    CLIENT_SERVER -> listOf(mainConfig, clientSideConfig, serverSideConfig)
+                    CLIENT_ONLY -> listOf(clientSideConfig)
+                    SERVER_ONLY -> listOf(serverSideConfig)
                 }
             }
         }
@@ -186,10 +189,10 @@ class FabricModConfig(
             encoder as JsonEncoder
             encoder.encodeJsonElement(
                 when (value) {
-                    is MixinsConfigEntry.MainConfigEntry -> JsonPrimitive(value.config)
-                    is MixinsConfigEntry.EnvironmentConfigEntry -> buildJsonObject {
-                        put("config", value.config)
-                        put("environment", value.environment)
+                    is MixinsConfigEntry.MainConfigEntry -> JsonPrimitive(value.fileName)
+                    is MixinsConfigEntry.SideConfigEntry -> buildJsonObject {
+                        put("config", value.fileName)
+                        put("environment", value.side.title)
                     }
                 }
             )
@@ -199,6 +202,7 @@ class FabricModConfig(
     }
 
     private object VersionCondition {
+
         const val ANY_VERSION: String = "*"
 
         fun min(version: String): String =
@@ -208,11 +212,11 @@ class FabricModConfig(
     companion object {
         fun of(
             metadata: ProjectMetadata,
-            environment: EnvironmentScope,
+            modEnvironmentType: ModEnvironmentType,
             targetVersion: String,
             loaderVersion: String,
             isApiRequired: Boolean,
-            dataGenerators: List<String>
+            dataGenerators: List<String>,
         ): FabricModConfig =
             FabricModConfig(
                 schemaVersion = 1,
@@ -220,25 +224,25 @@ class FabricModConfig(
                 version = metadata.version,
                 name = metadata.name,
                 description = metadata.description,
-                authors = listOf(Developer.name),
+                authors = listOf(DiskriaDeveloper.name),
                 license = metadata.license.id,
                 icon = "assets/${metadata.slug}/icon.png",
-                environment = environment.fabricConfigEnvironment,
+                environment = modEnvironmentType.fabricConfigEnvironment,
                 accessWidener = fileName(metadata.slug, "accesswidener"),
-                mixins = MixinsConfigEntry.of(metadata, environment),
+                mixins = MixinsConfigEntry.of(metadata, modEnvironmentType),
                 links = Links.of(
                     metadata.owner.getRepositoryUrl(metadata.slug)
                 ),
                 entryPoints = EntryPoints.of(
                     metadata,
-                    environment,
-                    dataGenerators
+                    modEnvironmentType,
+                    dataGenerators,
                 ),
                 dependencies = Dependencies.of(
                     metadata.jvmTarget.toInt(),
                     targetVersion,
                     loaderVersion,
-                    isApiRequired
+                    isApiRequired,
                 )
             )
     }

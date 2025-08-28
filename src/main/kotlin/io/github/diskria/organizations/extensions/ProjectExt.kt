@@ -6,11 +6,9 @@ import io.github.diskria.organizations.Secrets
 import io.github.diskria.organizations.licenses.License
 import io.github.diskria.organizations.licenses.MitLicense
 import io.github.diskria.organizations.metadata.*
-import io.github.diskria.organizations.minecraft.EnvironmentScope
-import io.github.diskria.organizations.minecraft.EnvironmentScope.*
-import io.github.diskria.organizations.minecraft.FabricModConfig
-import io.github.diskria.organizations.minecraft.MinecraftUtils
-import io.github.diskria.organizations.minecraft.ModLoader
+import io.github.diskria.organizations.minecraft.*
+import io.github.diskria.organizations.minecraft.ModEnvironmentType.*
+import io.github.diskria.organizations.minecraft.fabric.FabricModConfig
 import io.github.diskria.utils.kotlin.Constants
 import io.github.diskria.utils.kotlin.delegates.toAutoNamedProperty
 import io.github.diskria.utils.kotlin.extensions.asDirectoryOrNull
@@ -124,6 +122,16 @@ fun Project.getCatalogVersionOrThrow(name: String, catalog: String = "libs"): St
         "Missing ${name.wrap(Constants.Char.SINGLE_QUOTE)} version in $catalog.versions.toml"
     )
 
+fun Project.fileNames(projectPath: String): List<String> =
+    layout
+        .projectDirectory
+        .dir(projectPath)
+        .asFile
+        .asDirectoryOrNull()
+        ?.listFiles { it.isFile && !it.isHidden }
+        ?.map { it.nameWithoutExtension }
+        ?: emptyList()
+
 fun Project.configureBuildConfig(packageName: String, className: String, fields: () -> List<Property<String>>) {
     buildConfig {
         this as BuildConfigExt
@@ -134,6 +142,7 @@ fun Project.configureBuildConfig(packageName: String, className: String, fields:
         }
         useKotlinOutput {
             internalVisibility = false
+            topLevelConstants = false
         }
     }
 }
@@ -162,7 +171,7 @@ fun Project.buildMetadata(
     )
 }
 
-fun Project.configureProject(metadata: ProjectMetadata) {
+fun Project.configureProject(metadata: ProjectMetadata, sourceSetName: SourceSet = SourceSet.MAIN) {
     group = metadata.owner.namespace
     version = metadata.version
     base {
@@ -201,10 +210,19 @@ fun Project.configureProject(metadata: ProjectMetadata) {
             }
         }
     }
+    sourceSets {
+        this as SourceSetsExt
+        named(sourceSetName.logicalName) {
+            val generatedDirectory = "src/${sourceSetName}/generated"
+
+            resources.srcDirs(generatedDirectory)
+            java.srcDirs("$generatedDirectory/java")
+        }
+    }
 }
 
 fun Project.configureGradlePlugin(
-    owner: Owner = Developer,
+    owner: Owner = DiskriaDeveloper,
     publishingTarget: PublishingTarget?,
     tags: Set<String> = emptySet(),
     license: License = MitLicense,
@@ -242,8 +260,8 @@ fun Project.configureLibrary(license: License = MitLicense): ProjectMetadata {
 
 fun Project.configureMinecraftMod(
     minecraftVersion: String,
-    environment: EnvironmentScope,
-    modLoader: ModLoader = ModLoader.FABRIC,
+    environment: ModEnvironmentType,
+    modLoader: ModLoader,
     isFabricApiRequired: Boolean,
     license: License = MitLicense,
 ): ProjectMetadata {
@@ -252,22 +270,13 @@ fun Project.configureMinecraftMod(
     val jvmTarget = MinecraftUtils.getRuntimeJavaVersion(minecraftVersion).toJvmTarget()
     val metadata = buildMetadata(ProjectType.MINECRAFT_MOD, MinecraftOrganization, license, jvmTarget)
     val modId = metadata.slug
-    val dataGenerators = layout.projectDirectory
-        .dir("src/${environment.sourceSetName}/kotlin/${metadata.packageName.setCase(DotCase, PathCase)}/generators")
-        .asFile
-        .asDirectoryOrNull()
-        ?.listFiles { it.isFile && !it.isHidden }
-        ?.map { metadata.packageName + Constants.Char.DOT + it.nameWithoutExtension }
-        ?: emptyList()
-    configureProject(metadata)
     dependencies {
         minecraft("com.mojang:minecraft:$minecraftVersion")
+        modImplementation("net.fabricmc:fabric-loader:${getCatalogVersionOrThrow("fabric-loader")}")
 
         val yarnFullVersion = getCatalogVersion("fabric-yarn-full")
         val yarnVersion = yarnFullVersion ?: "$minecraftVersion+build.${getCatalogVersionOrThrow("fabric-yarn")}"
         mappings("net.fabricmc:yarn:$yarnVersion:v2")
-
-        modImplementation("net.fabricmc:fabric-loader:${getCatalogVersionOrThrow("fabric-loader")}")
 
         val kotlinFullVersion = getCatalogVersion("fabric-kotlin-full")
         val kotlinVersion = kotlinFullVersion
@@ -285,6 +294,20 @@ fun Project.configureMinecraftMod(
         val modName by metadata.name.toAutoNamedProperty(ScreamingSnakeCase)
         listOf(modId, modName)
     }
+    val mainSourceSetDirectory = "src/${environment.getMainSourceSet()}"
+    val packagePath = metadata.packageName.setCase(DotCase, PathCase)
+    val dataGenerators = fileNames("$mainSourceSetDirectory/kotlin/$packagePath/generators").map {
+        metadata.packageName + Constants.Char.DOT + it
+    }
+    val mixinClasses = environment.sourceSets.associateWith { sourceSet ->
+        val pathBase = "src/${sourceSet.logicalName}/java/$packagePath/mixins"
+        fileNames(
+            when (sourceSet) {
+                SourceSet.MAIN -> pathBase
+                else -> "$pathBase/${sourceSet.logicalName}"
+            }
+        )
+    }
     loom {
         this as LoomExt
         splitEnvironmentSourceSets()
@@ -292,16 +315,31 @@ fun Project.configureMinecraftMod(
             create(modId) {
                 sourceSets {
                     this as SourceSetsExt
-                    val sourceSetNames = when (environment) {
-                        CLIENT_SERVER -> listOf("main", "client", "server")
-                        CLIENT_ONLY -> listOf("client")
-                        SERVER_ONLY -> listOf("server")
+                    environment.sourceSets.forEach { sourceSet ->
+                        sourceSet(getByName(sourceSet.logicalName))
                     }
-                    sourceSetNames.forEach { name -> sourceSet(getByName(name)) }
                 }
             }
         }
-        accessWidenerPath.set(file("src/${environment.sourceSetName}/resources/$modId.accesswidener"))
+        runs {
+            ModSide.entries.forEach { side ->
+                named(side.title) {
+                    val hasSide = environment.sides.contains(side)
+                    ideConfigGenerated(hasSide)
+
+                    if (hasSide) {
+                        name = side.runConfigurationName
+                        runDir = "run/${side.title}"
+                        when (side) {
+                            ModSide.CLIENT -> client()
+                            ModSide.SERVER -> server()
+                        }
+                        programArgs("--username", "${DiskriaDeveloper.name}-${side.title}")
+                    }
+                }
+            }
+        }
+        accessWidenerPath.set(file("$mainSourceSetDirectory/resources/$modId.accesswidener"))
     }
     if (dataGenerators.isNotEmpty()) {
         loom {
@@ -309,13 +347,13 @@ fun Project.configureMinecraftMod(
             runs {
                 create("datagen") {
                     name = "Data Generation"
-                    runDir = "build/datagen"
-
+                    runDir = "build/fabricDataGeneration"
                     environment("server")
-
-                    vmArg("-Dfabric-api.datagen")
-                    vmArg("-Dfabric-api.datagen.output-dir=${file("src/${environment.sourceSetName}/generated")}")
-                    vmArg("-Dfabric-api.datagen.modid=$modId")
+                    vmArgs(
+                        "-Dfabric-api.datagen",
+                        "-Dfabric-api.datagen.output-dir=${file("$mainSourceSetDirectory/generated")}",
+                        "-Dfabric-api.datagen.modid=$modId",
+                    )
                 }
             }
         }
@@ -351,6 +389,7 @@ fun Project.configureMinecraftMod(
         from(generateFabricModConfigTask)
         duplicatesStrategy = DuplicatesStrategy.INCLUDE
     }
+    configureProject(metadata, environment.getMainSourceSet())
     configurePublishing(metadata, PublishingTarget.MODRINTH)
     return metadata
 }
@@ -390,7 +429,7 @@ private fun Project.configureGithubPackagesPublishing(metadata: ProjectMetadata)
         repositories {
             maven(metadata.owner.getRepositoryMavenUrl(metadata.slug)) {
                 credentials {
-                    username = Developer.name
+                    username = DiskriaDeveloper.name
                     password = githubPackagesToken
                 }
             }
